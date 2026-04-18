@@ -1516,7 +1516,48 @@
 
     async function addCat(title) { try { const ref = await addDoc(collection(db, "Video Names"), { title, names: [], createdAt: serverTimestamp() }); categories.push({ id: ref.id, title, names: [], createdAt: new Date() }); renderCats(); toast('Category "' + title + '" added!'); } catch (e) { console.error(e); toast('Failed: ' + (e.code || e.message), 'error'); } }
 
-    async function addNames(catId, newNames) { const cat = categories.find(c => c.id === catId); if (!cat) return; const updated = [...cat.names, ...newNames.map(n => ({ name: n, checked: false }))]; try { await updateDoc(doc(db, "Video Names", catId), { names: updated }); cat.names = updated; renderCats(); toast(newNames.length + ' name(s) added!'); } catch (e) { console.error(e); toast('Failed to add names.', 'error'); } }
+    async function addNames(catId, newNames) {
+      const cat = categories.find(c => c.id === catId);
+      if (!cat) return;
+
+      // Build a set of existing names (lowercase) for fast lookup
+      const existingLower = new Set(cat.names.map(n => n.name.toLowerCase().trim()));
+
+      const accepted = [];
+      const skipped = [];
+      // Track names added within this very batch (to handle same-batch duplicates)
+      const batchLower = new Set();
+
+      newNames.forEach(n => {
+        const key = n.toLowerCase().trim();
+        if (existingLower.has(key) || batchLower.has(key)) {
+          skipped.push(n);
+        } else {
+          accepted.push(n);
+          batchLower.add(key);
+        }
+      });
+
+      if (!accepted.length) {
+        toast('⚠️ All ' + skipped.length + ' name(s) already exist — no changes made.', 'warning');
+        return;
+      }
+
+      const updated = [...cat.names, ...accepted.map(n => ({ name: n, checked: false }))];
+      try {
+        await updateDoc(doc(db, "Video Names", catId), { names: updated });
+        cat.names = updated;
+        renderCats();
+        if (skipped.length > 0) {
+          toast(accepted.length + ' name(s) added! (' + skipped.length + ' duplicate(s) skipped)', 'warning');
+        } else {
+          toast(accepted.length + ' name(s) added!');
+        }
+      } catch (e) {
+        console.error(e);
+        toast('Failed to add names.', 'error');
+      }
+    }
 
     async function toggleCheck(catId, ni) { const cat = categories.find(c => c.id === catId); if (!cat || !cat.names[ni]) return; cat.names[ni].checked = !cat.names[ni].checked; try { await updateDoc(doc(db, "Video Names", catId), { names: cat.names }); renderCats(); } catch (e) { console.error(e); toast('Failed.', 'error'); } }
 
